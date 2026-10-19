@@ -1,0 +1,22 @@
+# Cơ sở dữ liệu cá nhân (tự tạo khi chạy)
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Môi trường ảo
+venv/
+.venv/
+env/
+
+# IDE / hệ điều hành
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
