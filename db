@@ -76,14 +76,26 @@ class Database:
 
         self.conn.commit()
 
+    def _id_nho_nhat_con_trong(self, ten_bang):
+        """Tìm ID nhỏ nhất chưa được dùng trong bảng (1, 2, 3, ...)."""
+        self.cursor.execute(f"SELECT id FROM {ten_bang} ORDER BY id")
+        new_id = 1
+        for (used_id,) in self.cursor.fetchall():
+            if used_id != new_id:
+                break
+            new_id += 1
+        return new_id
+
     # tên môn học
     def them_mon_hoc(self, ten_mon, so_tin_chi, giang_vien, ghi_chu=""):
+        new_id = self._id_nho_nhat_con_trong("mon_hoc")
         self.cursor.execute(
-            "INSERT INTO mon_hoc (ten_mon, so_tin_chi, giang_vien, ghi_chu) VALUES (?, ?, ?, ?)",
-            (ten_mon, so_tin_chi, giang_vien, ghi_chu),
+            "INSERT INTO mon_hoc (id, ten_mon, so_tin_chi, giang_vien, ghi_chu) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (new_id, ten_mon, so_tin_chi, giang_vien, ghi_chu),
         )
         self.conn.commit()
-        return self.cursor.lastrowid
+        return new_id
 
     def lay_danh_sach_mon_hoc(self):
         self.cursor.execute("SELECT * FROM mon_hoc ORDER BY ten_mon")
