@@ -1,7 +1,9 @@
 #  Phần mềm Quản lý Học tập Cá nhân
 
 Ứng dụng desktop giúp sinh viên quản lý việc học: môn học, thời khóa biểu, lịch thi, bài tập/deadline và ghi chú bài giảng 
+
 Giao diện : Tinker 
+
 Cơ sở dữ liệu : SQLite
 
 ##  Tính năng
