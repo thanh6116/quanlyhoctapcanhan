@@ -8,12 +8,19 @@ Cơ sở dữ liệu : SQLite
 
 ##  Tính năng
 Dùng Tab hiển thị chức năng 
-Tổng quan | Thống kê số môn học, bài tập chưa xong, lịch thi sắp tới, số ghi chú; danh sách deadline trong 7 ngày tới |
+
+Tổng quan | Thống kê số môn học, bài tập chưa xong, lịch thi sắp tới, số ghi chú; danh sách deadline trong 7 ngày tới 
+
 Môn học | Thêm / xóa môn học (tên, số tín chỉ, giảng viên, ghi chú) 
+
 Thời khóa biểu | Thêm / xóa lịch học theo thứ, tiết bắt đầu - kết thúc, phòng học 
+
 Lịch thi | Thêm / xóa lịch thi (ngày, giờ, phòng, hình thức thi) 
+
 Bài tập / Deadline | Thêm bài tập, đổi trạng thái, đặt mức ưu tiên; tô màu cảnh báo: quá hạn (đỏ), còn ≤ 3 ngày (cam), hoàn thành (xanh) 
+
 Ghi chú | Lưu ghi chú bài giảng quan trọng theo từng môn 
+
 ##  Yêu cầu
 - Python **3.8** trở lên
 - Tkinter (đi kèm Python trên Windows/macOS; trên Linux có thể cần cài thêm: `sudo apt install python3-tk`)
