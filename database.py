@@ -12,8 +12,8 @@ class Database:
         self._create_tables()
 
     def _create_tables(self):
-        """Tạo các bảng dữ liệu nếu có"""
-        #bảng môn học
+        """Tạo các bảng dữ liệu nếu chưa có"""
+        # Bảng môn học
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS mon_hoc (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -23,7 +23,7 @@ class Database:
                 ghi_chu TEXT
             )
         """)
-        #bảng lịch học 
+        # Bảng lịch học 
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS lich_hoc (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35,8 +35,7 @@ class Database:
                 FOREIGN KEY (mon_hoc_id) REFERENCES mon_hoc(id) ON DELETE CASCADE
             )
         """)
-
-        #bảng lịch thi
+        # Bảng lịch thi
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS lich_thi (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,7 +47,7 @@ class Database:
                 FOREIGN KEY (mon_hoc_id) REFERENCES mon_hoc(id) ON DELETE CASCADE
             )
         """)
-        #bảng deadline
+        # Bảng deadline (bài tập)
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS bai_tap (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,8 +60,7 @@ class Database:
                 FOREIGN KEY (mon_hoc_id) REFERENCES mon_hoc(id) ON DELETE SET NULL
             )
         """)
-
-        #bảng ghi chú 
+        # Bảng ghi chú 
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS ghi_chu (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -73,11 +71,10 @@ class Database:
                 FOREIGN KEY (mon_hoc_id) REFERENCES mon_hoc(id) ON DELETE SET NULL
             )
         """)
-
         self.conn.commit()
 
     def _id_nho_nhat_con_trong(self, ten_bang):
-        """Tìm ID nhỏ nhất chưa được dùng trong bảng (1, 2, 3, ...)."""
+        """Tìm ID nhỏ nhất chưa được dùng trong bảng."""
         self.cursor.execute(f"SELECT id FROM {ten_bang} ORDER BY id")
         new_id = 1
         for (used_id,) in self.cursor.fetchall():
@@ -86,7 +83,7 @@ class Database:
             new_id += 1
         return new_id
 
-    # tên môn học
+    # ================= MÔN HỌC =================
     def them_mon_hoc(self, ten_mon, so_tin_chi, giang_vien, ghi_chu=""):
         new_id = self._id_nho_nhat_con_trong("mon_hoc")
         self.cursor.execute(
@@ -112,7 +109,7 @@ class Database:
         )
         self.conn.commit()
 
-    # lịch học
+    # ================= LỊCH HỌC =================
     def them_lich_hoc(self, mon_hoc_id, thu, tiet_bd, tiet_kt, phong_hoc):
         self.cursor.execute(
             "INSERT INTO lich_hoc (mon_hoc_id, thu, tiet_bat_dau, tiet_ket_thuc, phong_hoc) VALUES (?, ?, ?, ?, ?)",
@@ -140,7 +137,7 @@ class Database:
         self.cursor.execute("DELETE FROM lich_hoc WHERE id = ?", (lich_id,))
         self.conn.commit()
 
-    # lịch thi
+    # ================= LỊCH THI =================
     def them_lich_thi(self, mon_hoc_id, ngay_thi, gio_thi, phong_thi, hinh_thuc):
         self.cursor.execute(
             "INSERT INTO lich_thi (mon_hoc_id, ngay_thi, gio_thi, phong_thi, hinh_thuc) VALUES (?, ?, ?, ?, ?)",
@@ -163,7 +160,14 @@ class Database:
         self.cursor.execute("DELETE FROM lich_thi WHERE id = ?", (thi_id,))
         self.conn.commit()
 
-    # deadline
+    def sua_lich_thi(self, thi_id, mon_hoc_id, ngay_thi, gio_thi, phong_thi, hinh_thuc):
+        self.cursor.execute(
+            "UPDATE lich_thi SET mon_hoc_id=?, ngay_thi=?, gio_thi=?, phong_thi=?, hinh_thuc=? WHERE id=?",
+            (mon_hoc_id, ngay_thi, gio_thi, phong_thi, hinh_thuc, thi_id),
+        )
+        self.conn.commit()
+
+    # ================= BÀI TẬP / DEADLINE =================
     def them_bai_tap(self, mon_hoc_id, tieu_de, mo_ta, han_nop, muc_do_uu_tien):
         self.cursor.execute(
             """INSERT INTO bai_tap (mon_hoc_id, tieu_de, mo_ta, han_nop, muc_do_uu_tien, trang_thai)
@@ -196,7 +200,16 @@ class Database:
         self.cursor.execute("DELETE FROM bai_tap WHERE id = ?", (bai_tap_id,))
         self.conn.commit()
 
-    # chú thích thêm
+    def sua_bai_tap(self, bai_tap_id, mon_hoc_id, tieu_de, mo_ta, han_nop, muc_do_uu_tien):
+        self.cursor.execute(
+            """UPDATE bai_tap 
+               SET mon_hoc_id=?, tieu_de=?, mo_ta=?, han_nop=?, muc_do_uu_tien=? 
+               WHERE id=?""",
+            (mon_hoc_id, tieu_de, mo_ta, han_nop, muc_do_uu_tien, bai_tap_id),
+        )
+        self.conn.commit()
+
+    # ================= GHI CHÚ =================
     def them_ghi_chu(self, mon_hoc_id, tieu_de, noi_dung, ngay_tao):
         self.cursor.execute(
             "INSERT INTO ghi_chu (mon_hoc_id, tieu_de, noi_dung, ngay_tao) VALUES (?, ?, ?, ?)",
