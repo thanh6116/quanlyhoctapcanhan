@@ -1,0 +1,2 @@
+ Dự án chỉ dùng thư viện chuẩn của Python (tkinter, sqlite3, datetime, os).
+ Không cần cài thêm gói nào.
