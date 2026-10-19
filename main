@@ -7,7 +7,6 @@ Chức năng chính:
   5. Ghi chú bài giảng quan trọng
   6. Thống kê tổng quan (số môn, số bài tập còn hạn, biểu đồ)
 """
-
 import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime, date
@@ -18,10 +17,8 @@ DAYS = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ
 PRIORITIES = ["Thấp", "Trung bình", "Cao", "Khẩn cấp"]
 STATUSES = ["Chưa hoàn thành", "Đang làm", "Hoàn thành"]
 
-
 class QLHTApp(tk.Tk):
     """Cửa sổ chính của ứng dụng."""
-
     def __init__(self):
         super().__init__()
         self.title("Phần mềm quản lí học tập cá nhân ")
@@ -187,7 +184,8 @@ class QLHTApp(tk.Tk):
         mon_id, ten = item["values"][0], item["values"][1]
         if messagebox.askyesno(
             "Xác nhận",
-            f"Xóa môn học '{ten}'? (Toàn bộ lịch học, lịch thi, bài tập liên quan cũng sẽ bị xóa)",
+            f"Xóa môn học '{ten}'?\n(Lịch học và lịch thi liên quan sẽ bị xóa; "
+            f"bài tập và ghi chú sẽ được giữ lại nhưng không gắn môn)",
         ):
             self.db.xoa_mon_hoc(mon_id)
             self.refresh_all()
@@ -602,10 +600,8 @@ class QLHTApp(tk.Tk):
         bai_tap_list = self.db.lay_danh_sach_bai_tap(chi_chua_hoan_thanh=True)
         lich_thi_list = self.db.lay_lich_thi()
         ghi_chu_list = self.db.lay_danh_sach_ghi_chu()
-
         self.card_mon.config(text=str(len(mon_list)))
         self.card_baitap.config(text=str(len(bai_tap_list)))
-        
         # Đếm lịch thi sắp tới (từ hôm nay trở đi)
         today = date.today()
         sap_toi = 0
@@ -618,7 +614,6 @@ class QLHTApp(tk.Tk):
                 pass
         self.card_thi.config(text=str(sap_toi))
         self.card_ghichu.config(text=str(len(ghi_chu_list)))
-
         # Danh sách deadline trong 7 ngày tới
         for row in self.tree_deadline.get_children():
             self.tree_deadline.delete(row)
@@ -646,7 +641,6 @@ class QLHTApp(tk.Tk):
     def on_close(self):
         self.db.dong()
         self.destroy()
-
 
 if __name__ == "__main__":
     app = QLHTApp()
