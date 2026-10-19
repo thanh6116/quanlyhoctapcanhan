@@ -1,38 +1,44 @@
+#  Phần mềm Quản lý Học tập Cá nhân
 
-## Cách chạy chương trình
-```bash
+Ứng dụng desktop giúp sinh viên quản lý việc học: môn học, thời khóa biểu, lịch thi, bài tập/deadline và ghi chú bài giảng. Viết bằng **Python**, giao diện **Tkinter**, lưu trữ dữ liệu bằng **SQLite**.
+
+##  Tính năng
+Dùng Tab hiển thị chức năng 
+Tổng quan | Thống kê số môn học, bài tập chưa xong, lịch thi sắp tới, số ghi chú; danh sách deadline trong 7 ngày tới |
+Môn học | Thêm / xóa môn học (tên, số tín chỉ, giảng viên, ghi chú) 
+Thời khóa biểu | Thêm / xóa lịch học theo thứ, tiết bắt đầu - kết thúc, phòng học 
+Lịch thi | Thêm / xóa lịch thi (ngày, giờ, phòng, hình thức thi) 
+Bài tập / Deadline | Thêm bài tập, đổi trạng thái, đặt mức ưu tiên; tô màu cảnh báo: quá hạn (đỏ), còn ≤ 3 ngày (cam), hoàn thành (xanh) 
+Ghi chú | Lưu ghi chú bài giảng quan trọng theo từng môn 
+##  Yêu cầu
+- Python **3.8** trở lên
+- Tkinter (đi kèm Python trên Windows/macOS; trên Linux có thể cần cài thêm: `sudo apt install python3-tk`)
+- Không cần cài thư viện bên ngoài
+
+# 2. Chạy ứng dụng
 python main.py
+``
+Cấu Trúc dự án 
 ```
-Khi chạy lần đầu, chương trình sẽ tự động tạo file cơ sở dữ liệu `qlht.db`
-trong cùng thư mục — không cần cấu hình gì thêm.
-## Cấu trúc thư mục
-```
-qlht_project/
-├── main.py          # Giao diện chính (Tkinter) và logic điều khiển sự kiện
-├── database.py       # Lớp Database: kết nối và thao tác CRUD với SQLite
-├── qlht.db            # File cơ sở dữ liệu (tự sinh khi chạy lần đầu)
+.
+├── main.py          # Giao diện chính (Tkinter) và xử lý sự kiện
+├── database.py      # Lớp Database: tạo bảng và thao tác SQLite
+├── requirements.txt # Danh sách thư viện (hiện không cần thư viện ngoài)
+├── .gitignore
+├── LICENSE
 └── README.md
 ```
-## Các chức năng chính
-1. **Tổng quan**: thống kê nhanh số môn học, bài tập chưa hoàn thành,
-   lịch thi sắp tới, ghi chú; danh sách deadline trong 7 ngày tới.
-2. **Môn học**: thêm/xóa/xem danh sách môn học (tên, số tín chỉ, giảng viên,
-   ghi chú).
-3. **Thời khóa biểu**: thêm lịch học theo thứ/tiết/phòng, xem theo tuần,
-   tự động sắp xếp theo thứ tự Thứ 2 → Chủ nhật.
-4. **Lịch thi**: quản lý ngày giờ, phòng thi, hình thức thi theo từng môn.
-5. **Bài tập / Deadline**: thêm bài tập gắn với môn học, đặt mức ưu tiên,
-   cập nhật trạng thái (Chưa hoàn thành / Đang làm / Hoàn thành).
-   Danh sách được tô màu cảnh báo:
-   - 🔴 Đỏ: đã quá hạn
-   - 🟠 Cam: còn ≤ 3 ngày đến hạn
-   - 🟢 Xanh: đã hoàn thành
-6. **Ghi chú**: lưu ghi chú bài giảng gắn với từng môn học.
+File `qlht.db` được tạo tự động khi chạy và không được đưa lên Git.
+##  Cơ sở dữ liệu
+SQLite với 5 bảng:
 
-## Ghi chú kỹ thuật
-- Cơ sở dữ liệu dùng 5 bảng: `mon_hoc`, `lich_hoc`, `lich_thi`, `bai_tap`,
-  `ghi_chu`, liên kết qua khóa ngoại `mon_hoc_id`.
-- Khi xóa một môn học, toàn bộ lịch học/lịch thi liên quan sẽ tự động bị xóa
-  theo (ON DELETE CASCADE); bài tập và ghi chú liên quan sẽ được giữ lại
-  nhưng gỡ liên kết môn học (ON DELETE SET NULL).
-- Định dạng ngày tháng dùng trong toàn bộ ứng dụng: `dd/mm/yyyy`.
+- `mon_hoc`: môn học
+- `lich_hoc`: thời khóa biểu (khóa ngoại `mon_hoc_id`, `ON DELETE CASCADE`)
+- `lich_thi`: lịch thi (khóa ngoại `mon_hoc_id`, `ON DELETE CASCADE`)
+- `bai_tap`: bài tập / deadline (khóa ngoại `mon_hoc_id`, `ON DELETE SET NULL`)
+- `ghi_chu`: ghi chú bài giảng (khóa ngoại `mon_hoc_id`, `ON DELETE SET NULL`)
+##  Lưu ý khi sử dụng
+- Ngày nhập theo định dạng **dd/mm/yyyy** (ví dụ: `25/12/2026`).
+- Giao diện dùng font **Segoe UI** (có sẵn trên Windows). Trên hệ điều hành khác, Tkinter sẽ tự chọn font thay thế.
+
+
