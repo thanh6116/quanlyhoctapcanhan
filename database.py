@@ -1,7 +1,14 @@
 import sqlite3
 import os
+import unicodedata
 
 DB_NAME = os.path.join(os.path.dirname(os.path.abspath(__file__)), "qlht.db")
+
+def _bo_dau(text):
+    """Bỏ dấu tiếng Việt và chuyển về chữ thường để so khớp khi tìm kiếm."""
+    text = unicodedata.normalize("NFD", text or "")
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+    return text.replace("đ", "d").replace("Đ", "D").lower()
 
 class Database:
     def __init__(self, db_path=DB_NAME):
@@ -100,6 +107,19 @@ class Database:
     def lay_danh_sach_mon_hoc(self):
         self.cursor.execute("SELECT * FROM mon_hoc ORDER BY ten_mon")
         return self.cursor.fetchall()
+
+    def lay_mon_hoc(self, mon_hoc_id):
+        """Lấy thông tin một môn học theo ID."""
+        self.cursor.execute("SELECT * FROM mon_hoc WHERE id = ?", (mon_hoc_id,))
+        return self.cursor.fetchone()
+
+    def tim_kiem_mon_hoc(self, tu_khoa):
+        """Tìm môn học theo tên (không phân biệt hoa thường và dấu)."""
+        danh_sach = self.lay_danh_sach_mon_hoc()
+        tu_khoa = _bo_dau((tu_khoa or "").strip())
+        if not tu_khoa:
+            return danh_sach
+        return [m for m in danh_sach if tu_khoa in _bo_dau(m[1])]
 
     def xoa_mon_hoc(self, mon_hoc_id):
         self.cursor.execute("DELETE FROM mon_hoc WHERE id = ?", (mon_hoc_id,))
