@@ -136,6 +136,16 @@ class QLHTApp(tk.Tk):
             row=2, column=0, columnspan=4, pady=10
         )
 
+        search_frame = ttk.Frame(frame)
+        search_frame.pack(fill="x", padx=15)
+        ttk.Label(search_frame, text="🔍 Tìm môn học theo tên:").pack(side="left", padx=5)
+        self.mh_timkiem = ttk.Entry(search_frame, width=30)
+        self.mh_timkiem.pack(side="left", padx=5)
+        self.mh_timkiem.bind("<KeyRelease>", lambda e: self.refresh_monhoc())
+        ttk.Button(
+            search_frame, text="Xóa tìm kiếm", command=self.xoa_tim_kiem_mon_hoc
+        ).pack(side="left", padx=5)
+
         list_frame = ttk.LabelFrame(frame, text="Danh sách môn học", padding=10)
         list_frame.pack(fill="both", expand=True, padx=15, pady=10)
 
@@ -152,9 +162,16 @@ class QLHTApp(tk.Tk):
         self.tree_monhoc.configure(yscroll=scrollbar.set)
         scrollbar.pack(side="right", fill="y")
 
-        ttk.Button(frame, text="Xóa môn học đã chọn", command=self.xoa_mon_hoc).pack(
-            anchor="e", padx=15, pady=(0, 10)
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(fill="x", padx=15, pady=(0, 10))
+        ttk.Button(btn_frame, text="Xóa môn học đã chọn", command=self.xoa_mon_hoc).pack(
+            side="right", padx=5
         )
+        ttk.Button(btn_frame, text="Sửa môn học đã chọn", command=self.sua_mon_hoc).pack(
+            side="right", padx=5
+        )
+        # Nhấp đúp vào một dòng để sửa nhanh
+        self.tree_monhoc.bind("<Double-1>", lambda e: self.sua_mon_hoc())
 
     def them_mon_hoc(self):
         ten = self.mh_ten.get().strip()
@@ -193,9 +210,84 @@ class QLHTApp(tk.Tk):
     def refresh_monhoc(self):
         for row in self.tree_monhoc.get_children():
             self.tree_monhoc.delete(row)
-        for mh in self.db.lay_danh_sach_mon_hoc():
+        tu_khoa = self.mh_timkiem.get() if hasattr(self, "mh_timkiem") else ""
+        for mh in self.db.tim_kiem_mon_hoc(tu_khoa):
             self.tree_monhoc.insert("", "end", values=mh)
         self._refresh_mon_hoc_comboboxes()
+
+    def xoa_tim_kiem_mon_hoc(self):
+        self.mh_timkiem.delete(0, tk.END)
+        self.refresh_monhoc()
+
+    def sua_mon_hoc(self):
+        """Mở cửa sổ chỉnh sửa môn học đang chọn."""
+        selected = self.tree_monhoc.selection()
+        if not selected:
+            messagebox.showwarning("Chưa chọn", "Vui lòng chọn môn học cần sửa.")
+            return
+        mon_id = self.tree_monhoc.item(selected[0])["values"][0]
+        mon = self.db.lay_mon_hoc(mon_id)
+        if not mon:
+            messagebox.showerror("Lỗi", "Không tìm thấy môn học này.")
+            self.refresh_all()
+            return
+        _, ten, tinchi, gv, ghichu = mon
+
+        win = tk.Toplevel(self)
+        win.title("Sửa môn học")
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+
+        form = ttk.Frame(win, padding=15)
+        form.pack(fill="both", expand=True)
+
+        ttk.Label(form, text="Tên môn học:").grid(row=0, column=0, sticky="w", padx=5, pady=5)
+        e_ten = ttk.Entry(form, width=30)
+        e_ten.insert(0, ten or "")
+        e_ten.grid(row=0, column=1, padx=5, pady=5)
+
+        ttk.Label(form, text="Số tín chỉ:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
+        e_tc = ttk.Spinbox(form, from_=1, to=10, width=10)
+        e_tc.set(str(tinchi if tinchi is not None else 1))
+        e_tc.grid(row=1, column=1, sticky="w", padx=5, pady=5)
+
+        ttk.Label(form, text="Giảng viên:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
+        e_gv = ttk.Entry(form, width=30)
+        e_gv.insert(0, gv or "")
+        e_gv.grid(row=2, column=1, padx=5, pady=5)
+
+        ttk.Label(form, text="Ghi chú:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
+        e_gc = ttk.Entry(form, width=30)
+        e_gc.insert(0, ghichu or "")
+        e_gc.grid(row=3, column=1, padx=5, pady=5)
+
+        def luu():
+            ten_moi = e_ten.get().strip()
+            if not ten_moi:
+                messagebox.showwarning(
+                    "Thiếu dữ liệu", "Vui lòng nhập tên môn học.", parent=win
+                )
+                return
+            try:
+                tinchi_moi = int(e_tc.get())
+            except ValueError:
+                tinchi_moi = 0
+            self.db.sua_mon_hoc(
+                mon_id, ten_moi, tinchi_moi, e_gv.get().strip(), e_gc.get().strip()
+            )
+            win.destroy()
+            self.refresh_all()
+            messagebox.showinfo("Thành công", f"Đã cập nhật môn học '{ten_moi}'.")
+
+        btns = ttk.Frame(form)
+        btns.grid(row=4, column=0, columnspan=2, pady=(10, 0))
+        ttk.Button(btns, text="Lưu thay đổi", command=luu).pack(side="left", padx=5)
+        ttk.Button(btns, text="Hủy", command=win.destroy).pack(side="left", padx=5)
+
+        e_ten.focus_set()
+        win.bind("<Return>", lambda e: luu())
+        win.bind("<Escape>", lambda e: win.destroy())
 
     def _refresh_mon_hoc_comboboxes(self):
         mon_list = self.db.lay_danh_sach_mon_hoc()
