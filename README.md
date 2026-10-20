@@ -11,7 +11,7 @@ Dùng Tab hiển thị chức năng
 
 Tổng quan | Thống kê số môn học, bài tập chưa xong, lịch thi sắp tới, số ghi chú; danh sách deadline trong 7 ngày tới 
 
-Môn học | Thêm / xóa môn học (tên, số tín chỉ, giảng viên, ghi chú) 
+Môn học | Thêm / xóa môn học (tên, số tín chỉ, giảng viên, ghi chú) , chỉnh sửa và tìm kiếm môn học đã thêm 
 
 Thời khóa biểu | Thêm / xóa lịch học theo thứ, tiết bắt đầu - kết thúc, phòng học 
 
