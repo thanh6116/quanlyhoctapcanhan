@@ -11,7 +11,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 from datetime import datetime, date
 
-from database import Database
+from database import Database, mo_ta_gio_tiet
 
 DAYS = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"]
 PRIORITIES = ["Thấp", "Trung bình", "Cao", "Khẩn cấp"]
@@ -310,11 +310,11 @@ class QLHTApp(tk.Tk):
         self.tkb_thu.grid(row=0, column=3, padx=5, pady=5)
 
         ttk.Label(form, text="Tiết bắt đầu:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
-        self.tkb_bd = ttk.Spinbox(form, from_=1, to=15, width=10)
+        self.tkb_bd = ttk.Spinbox(form, from_=1, to=12, width=10)
         self.tkb_bd.grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
         ttk.Label(form, text="Tiết kết thúc:").grid(row=1, column=2, sticky="w", padx=5, pady=5)
-        self.tkb_kt = ttk.Spinbox(form, from_=1, to=15, width=10)
+        self.tkb_kt = ttk.Spinbox(form, from_=1, to=12, width=10)
         self.tkb_kt.grid(row=1, column=3, sticky="w", padx=5, pady=5)
 
         ttk.Label(form, text="Phòng học:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
@@ -325,7 +325,7 @@ class QLHTApp(tk.Tk):
             row=2, column=3, pady=5
         )
 
-        list_frame = ttk.LabelFrame(frame, text="Thời khóa biểu trong tuần", padding=10)
+        list_frame = ttk.LabelFrame(frame, text="Thời khóa biểu trong tuần (dòng đỏ: trùng lịch học)", padding=10)
         list_frame.pack(fill="both", expand=True, padx=15, pady=10)
 
         cols = ("id", "mon", "thu", "bd", "kt", "phong")
@@ -363,9 +363,21 @@ class QLHTApp(tk.Tk):
             return
         phong = self.tkb_phong.get().strip()
 
+        trung = self.db.tim_xung_dot_lich_hoc(thu, bd, kt)
+        if trung:
+            ds = "\n".join(self._mo_ta_lich_hoc(r) for r in trung)
+            if not messagebox.askyesno(
+                "⚠ Cảnh báo trùng lịch học",
+                f"Lịch học mới ({thu}, tiết {bd}-{kt}) bị TRÙNG với:\n{ds}"
+                "\n\nBạn vẫn muốn thêm?",
+                icon="warning",
+            ):
+                return
+
         self.db.them_lich_hoc(mon_id, thu, bd, kt, phong)
         self.tkb_phong.delete(0, tk.END)
         self.refresh_tkb()
+        self.refresh_lichthi()
 
     def xoa_lich_hoc(self):
         selected = self.tree_tkb.selection()
@@ -375,12 +387,25 @@ class QLHTApp(tk.Tk):
         item = self.tree_tkb.item(selected[0])
         self.db.xoa_lich_hoc(item["values"][0])
         self.refresh_tkb()
+        self.refresh_lichthi()
 
     def refresh_tkb(self):
         for row in self.tree_tkb.get_children():
             self.tree_tkb.delete(row)
+        self.tree_tkb.tag_configure("conflict", foreground="#c62828", background="#ffebee")
+        xung_dot = self.db.lay_id_lich_hoc_xung_dot()
         for lh in self.db.lay_thoi_khoa_bieu():
-            self.tree_tkb.insert("", "end", values=lh)
+            tags = ("conflict",) if lh[0] in xung_dot else ()
+            self.tree_tkb.insert("", "end", values=lh, tags=tags)
+
+    @staticmethod
+    def _mo_ta_lich_hoc(r):
+        gio = mo_ta_gio_tiet(r[3], r[4])
+        return f"  • {r[1]} ({r[2]}, tiết {r[3]}-{r[4]}, {gio}, phòng {r[5] or '—'})"
+
+    @staticmethod
+    def _mo_ta_lich_thi(r):
+        return f"  • {r[1]} (ngày {r[2]}, giờ {r[3] or 'chưa rõ'}, phòng {r[4] or '—'})"
 
     # ================= TAB LỊCH THI =================
     def _build_tab_lichthi(self):
@@ -416,7 +441,7 @@ class QLHTApp(tk.Tk):
             row=2, column=3, pady=5
         )
 
-        list_frame = ttk.LabelFrame(frame, text="Danh sách lịch thi", padding=10)
+        list_frame = ttk.LabelFrame(frame, text="Danh sách lịch thi (đỏ: trùng lịch thi hoặc trùng giờ học; cam: cùng ngày có lịch học, chưa rõ giờ thi)", padding=10)
         list_frame.pack(fill="both", expand=True, padx=15, pady=10)
 
         cols = ("id", "mon", "ngay", "gio", "phong", "hinhthuc")
@@ -452,6 +477,29 @@ class QLHTApp(tk.Tk):
         phong = self.thi_phong.get().strip()
         hinhthuc = self.thi_hinhthuc.get().strip()
 
+        canh_bao = []
+        trung_thi = self.db.tim_xung_dot_lich_thi(ngay, gio)
+        if trung_thi:
+            ds = "\n".join(self._mo_ta_lich_thi(r) for r in trung_thi)
+            canh_bao.append(f"Trùng lịch THI cùng ngày với:\n{ds}")
+        trung_hoc, chinh_xac = self.db.tim_lich_hoc_trung_gio_thi(ngay, gio, mon_id)
+        if trung_hoc:
+            ds = "\n".join(self._mo_ta_lich_hoc(r) for r in trung_hoc)
+            if chinh_xac:
+                canh_bao.append(f"Giờ thi {gio} TRÙNG GIỜ HỌC của môn khác:\n{ds}")
+            else:
+                canh_bao.append(
+                    f"Ngày thi {ngay} có LỊCH HỌC của môn khác "
+                    f"(chưa đọc được giờ thi nên chưa so sánh chính xác):\n{ds}"
+                )
+        if canh_bao:
+            if not messagebox.askyesno(
+                "⚠ Cảnh báo trùng lịch",
+                "\n\n".join(canh_bao) + "\n\nBạn vẫn muốn thêm lịch thi này?",
+                icon="warning",
+            ):
+                return
+
         self.db.them_lich_thi(mon_id, ngay, gio, phong, hinhthuc)
         self.thi_ngay.delete(0, tk.END)
         self.thi_gio.delete(0, tk.END)
@@ -470,8 +518,17 @@ class QLHTApp(tk.Tk):
     def refresh_lichthi(self):
         for row in self.tree_thi.get_children():
             self.tree_thi.delete(row)
+        self.tree_thi.tag_configure("conflict", foreground="#c62828", background="#ffebee")
+        self.tree_thi.tag_configure("hoc_cung_ngay", foreground="#e65100", background="#fff3e0")
+        trung_thi, trung_hoc = self.db.lay_id_lich_thi_xung_dot()
         for lt in self.db.lay_lich_thi():
-            self.tree_thi.insert("", "end", values=lt)
+            if lt[0] in trung_thi:
+                tags = ("conflict",)
+            elif lt[0] in trung_hoc:
+                tags = ("hoc_cung_ngay",)
+            else:
+                tags = ()
+            self.tree_thi.insert("", "end", values=lt, tags=tags)
 
     # ================= TAB BÀI TẬP / DEADLINE =================
     def _build_tab_baitap(self):
