@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import re
+import shutil
 import unicodedata
 from datetime import datetime
 
@@ -68,6 +69,14 @@ def _gio_ra_phut(text):
     return gio * 60 + phut
 
 
+def chuan_hoa_gio(text):
+    """'7h30' -> '07:30'. Không đọc được thì trả về None."""
+    phut = _gio_ra_phut(text)
+    if phut is None:
+        return None
+    return f"{phut // 60:02d}:{phut % 60:02d}"
+
+
 def _thu_cua_ngay(ngay):
     """'26/10/2026' -> 'Thứ 2'. Sai định dạng thì trả về None."""
     try:
@@ -90,6 +99,45 @@ def _bo_dau(text):
     text = "".join(c for c in text if unicodedata.category(c) != "Mn")
     return text.replace("đ", "d").replace("Đ", "D").lower()
 
+def _chuan_hoa_ten(text):
+    """Chuẩn hóa tên để so sánh trùng: bỏ dấu, chữ thường, gộp khoảng trắng."""
+    return " ".join(_bo_dau(text).split())
+
+
+_RE_ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _ngay_vao(ngay):
+    """'5/1/2026' hoặc '05/01/2026' -> '2026-01-05' (lưu dạng ISO để sắp xếp đúng thời gian).
+    Giá trị đã là ISO hoặc không đọc được thì giữ nguyên."""
+    if not ngay or _RE_ISO.match(ngay):
+        return ngay
+    try:
+        return datetime.strptime(ngay, "%d/%m/%Y").strftime("%Y-%m-%d")
+    except ValueError:
+        return ngay
+
+
+def _ngay_ra(ngay):
+    """'2026-01-05' -> '05/01/2026' (dạng hiển thị trên giao diện)."""
+    if ngay and _RE_ISO.match(ngay):
+        try:
+            return datetime.strptime(ngay, "%Y-%m-%d").strftime("%d/%m/%Y")
+        except ValueError:
+            return ngay
+    return ngay
+
+
+def _doi_cot_ngay(rows, vi_tri):
+    """Đổi cột ngày ở vị trí `vi_tri` của mọi dòng từ ISO sang dd/mm/yyyy."""
+    ket_qua = []
+    for r in rows:
+        r = list(r)
+        r[vi_tri] = _ngay_ra(r[vi_tri])
+        ket_qua.append(tuple(r))
+    return ket_qua
+
+
 class Database:
     def __init__(self, db_path=DB_NAME):
         self.db_path = db_path
@@ -97,6 +145,25 @@ class Database:
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.cursor = self.conn.cursor()
         self._create_tables()
+        self._chuyen_ngay_sang_iso()
+
+    def _chuyen_ngay_sang_iso(self):
+        """Đổi ngày dd/mm/yyyy cũ trong CSDL sang yyyy-mm-dd. Chạy lại nhiều lần vẫn an toàn."""
+        cac_cot = [("lich_thi", "ngay_thi"), ("bai_tap", "han_nop"), ("ghi_chu", "ngay_tao")]
+        can_doi = []
+        for bang, cot in cac_cot:
+            self.cursor.execute(f"SELECT id, {cot} FROM {bang}")
+            for id_, ngay in self.cursor.fetchall():
+                moi = _ngay_vao(ngay)
+                if moi != ngay:
+                    can_doi.append((bang, cot, id_, moi))
+        if not can_doi:
+            return
+        if os.path.exists(self.db_path):  # sao lưu một bản trước khi đổi
+            shutil.copyfile(self.db_path, self.db_path + ".bak")
+        for bang, cot, id_, moi in can_doi:
+            self.cursor.execute(f"UPDATE {bang} SET {cot}=? WHERE id=?", (moi, id_))
+        self.conn.commit()
 
     def _create_tables(self):
         """Tạo các bảng dữ liệu nếu có"""
@@ -201,6 +268,14 @@ class Database:
             return danh_sach
         return [m for m in danh_sach if tu_khoa in _bo_dau(m[1])]
 
+    def tim_mon_trung_ten(self, ten_mon, bo_qua_id=None):
+        """Trả về môn học đã có cùng tên (không phân biệt hoa thường, dấu, khoảng trắng thừa)."""
+        ten = _chuan_hoa_ten(ten_mon)
+        for m in self.lay_danh_sach_mon_hoc():
+            if m[0] != bo_qua_id and _chuan_hoa_ten(m[1]) == ten:
+                return m
+        return None
+
     def xoa_mon_hoc(self, mon_hoc_id):
         self.cursor.execute("DELETE FROM mon_hoc WHERE id = ?", (mon_hoc_id,))
         self.conn.commit()
@@ -258,6 +333,23 @@ class Database:
         """)
         return self.cursor.fetchall()
 
+    def lay_lich_hoc(self, lich_id):
+        """Trả về (id, mon_hoc_id, thu, tiet_bd, tiet_kt, phong_hoc) của một lịch học."""
+        self.cursor.execute(
+            "SELECT id, mon_hoc_id, thu, tiet_bat_dau, tiet_ket_thuc, phong_hoc "
+            "FROM lich_hoc WHERE id = ?",
+            (lich_id,),
+        )
+        return self.cursor.fetchone()
+
+    def sua_lich_hoc(self, lich_id, mon_hoc_id, thu, tiet_bd, tiet_kt, phong_hoc):
+        self.cursor.execute(
+            "UPDATE lich_hoc SET mon_hoc_id=?, thu=?, tiet_bat_dau=?, tiet_ket_thuc=?, phong_hoc=? "
+            "WHERE id=?",
+            (mon_hoc_id, thu, tiet_bd, tiet_kt, phong_hoc, lich_id),
+        )
+        self.conn.commit()
+
     def xoa_lich_hoc(self, lich_id):
         self.cursor.execute("DELETE FROM lich_hoc WHERE id = ?", (lich_id,))
         self.conn.commit()
@@ -266,20 +358,26 @@ class Database:
     def them_lich_thi(self, mon_hoc_id, ngay_thi, gio_thi, phong_thi, hinh_thuc):
         self.cursor.execute(
             "INSERT INTO lich_thi (mon_hoc_id, ngay_thi, gio_thi, phong_thi, hinh_thuc) VALUES (?, ?, ?, ?, ?)",
-            (mon_hoc_id, ngay_thi, gio_thi, phong_thi, hinh_thuc),
+            (mon_hoc_id, _ngay_vao(ngay_thi), gio_thi, phong_thi, hinh_thuc),
         )
         self.conn.commit()
         return self.cursor.lastrowid
 
     def lay_lich_thi(self):
-        self.cursor.execute("""
-            SELECT lich_thi.id, mon_hoc.ten_mon, lich_thi.ngay_thi,
-                   lich_thi.gio_thi, lich_thi.phong_thi, lich_thi.hinh_thuc
-            FROM lich_thi
-            JOIN mon_hoc ON lich_thi.mon_hoc_id = mon_hoc.id
-            ORDER BY lich_thi.ngay_thi
-        """)
-        return self.cursor.fetchall()
+           self.cursor.execute("""
+               SELECT lich_thi.id, mon_hoc.ten_mon, lich_thi.ngay_thi,
+                      lich_thi.gio_thi, lich_thi.phong_thi, lich_thi.hinh_thuc
+               FROM lich_thi
+               JOIN mon_hoc ON lich_thi.mon_hoc_id = mon_hoc.id
+           """)
+           rows = self.cursor.fetchall()
+
+           def khoa(r):
+               phut = _gio_ra_phut(r[3])
+               return (r[2], phut if phut is not None else 24 * 60, r[0])
+
+           rows.sort(key=khoa)  # giờ không đọc được thì xếp cuối ngày
+           return _doi_cot_ngay(rows, 2)
 
     def tim_xung_dot_lich_thi(self, ngay_thi, gio_thi, bo_qua_id=None):
         """Các lịch thi cùng ngày và có giờ thi trùng hoặc quá sát với giờ thi đưa vào."""
@@ -289,9 +387,9 @@ class Database:
             FROM lich_thi
             JOIN mon_hoc ON lich_thi.mon_hoc_id = mon_hoc.id
             WHERE lich_thi.ngay_thi = ?
-        """, (ngay_thi,))
+        """, (_ngay_vao(ngay_thi),))
         return [
-            r for r in self.cursor.fetchall()
+            r for r in _doi_cot_ngay(self.cursor.fetchall(), 2)
             if r[0] != bo_qua_id and _trung_gio_thi(gio_thi, r[3])
         ]
 
@@ -331,7 +429,7 @@ class Database:
         self.cursor.execute(
             "SELECT id, mon_hoc_id, ngay_thi, gio_thi FROM lich_thi"
         )
-        thi = self.cursor.fetchall()
+        thi = _doi_cot_ngay(self.cursor.fetchall(), 2)
         self.cursor.execute(
             "SELECT mon_hoc_id, thu, tiet_bat_dau, tiet_ket_thuc FROM lich_hoc"
         )
@@ -354,6 +452,24 @@ class Database:
                 do.add(a[0])
         return do, cam
 
+    def lay_lich_thi_theo_id(self, thi_id):
+        """Trả về (id, mon_hoc_id, ngay_thi, gio_thi, phong_thi, hinh_thuc) của một lịch thi."""
+        self.cursor.execute(
+            "SELECT id, mon_hoc_id, ngay_thi, gio_thi, phong_thi, hinh_thuc "
+            "FROM lich_thi WHERE id = ?",
+            (thi_id,),
+        )
+        row = self.cursor.fetchone()
+        return _doi_cot_ngay([row], 2)[0] if row else None
+
+    def sua_lich_thi(self, thi_id, mon_hoc_id, ngay_thi, gio_thi, phong_thi, hinh_thuc):
+        self.cursor.execute(
+            "UPDATE lich_thi SET mon_hoc_id=?, ngay_thi=?, gio_thi=?, phong_thi=?, hinh_thuc=? "
+            "WHERE id=?",
+            (mon_hoc_id, _ngay_vao(ngay_thi), gio_thi, phong_thi, hinh_thuc, thi_id),
+        )
+        self.conn.commit()
+
     def xoa_lich_thi(self, thi_id):
         self.cursor.execute("DELETE FROM lich_thi WHERE id = ?", (thi_id,))
         self.conn.commit()
@@ -363,7 +479,7 @@ class Database:
         self.cursor.execute(
             """INSERT INTO bai_tap (mon_hoc_id, tieu_de, mo_ta, han_nop, muc_do_uu_tien, trang_thai)
                VALUES (?, ?, ?, ?, ?, 'Chưa hoàn thành')""",
-            (mon_hoc_id, tieu_de, mo_ta, han_nop, muc_do_uu_tien),
+            (mon_hoc_id, tieu_de, mo_ta, _ngay_vao(han_nop), muc_do_uu_tien),
         )
         self.conn.commit()
         return self.cursor.lastrowid
@@ -377,9 +493,29 @@ class Database:
         """
         if chi_chua_hoan_thanh:
             query += " WHERE bai_tap.trang_thai != 'Hoàn thành'"
-        query += " ORDER BY bai_tap.han_nop"
+        query += " ORDER BY bai_tap.han_nop, bai_tap.id"
         self.cursor.execute(query)
-        return self.cursor.fetchall()
+        return _doi_cot_ngay(self.cursor.fetchall(), 4)
+
+    def lay_bai_tap(self, bai_tap_id):
+        """Trả về (id, mon_hoc_id, tieu_de, mo_ta, han_nop, muc_do_uu_tien, trang_thai)."""
+        self.cursor.execute(
+            "SELECT id, mon_hoc_id, tieu_de, mo_ta, han_nop, muc_do_uu_tien, trang_thai "
+            "FROM bai_tap WHERE id = ?",
+            (bai_tap_id,),
+        )
+        row = self.cursor.fetchone()
+        return _doi_cot_ngay([row], 4)[0] if row else None
+
+    def sua_bai_tap(self, bai_tap_id, mon_hoc_id, tieu_de, mo_ta, han_nop,
+                    muc_do_uu_tien, trang_thai):
+        self.cursor.execute(
+            "UPDATE bai_tap SET mon_hoc_id=?, tieu_de=?, mo_ta=?, han_nop=?, "
+            "muc_do_uu_tien=?, trang_thai=? WHERE id=?",
+            (mon_hoc_id, tieu_de, mo_ta, _ngay_vao(han_nop),
+             muc_do_uu_tien, trang_thai, bai_tap_id),
+        )
+        self.conn.commit()
 
     def cap_nhat_trang_thai_bai_tap(self, bai_tap_id, trang_thai):
         self.cursor.execute(
@@ -395,7 +531,7 @@ class Database:
     def them_ghi_chu(self, mon_hoc_id, tieu_de, noi_dung, ngay_tao):
         self.cursor.execute(
             "INSERT INTO ghi_chu (mon_hoc_id, tieu_de, noi_dung, ngay_tao) VALUES (?, ?, ?, ?)",
-            (mon_hoc_id, tieu_de, noi_dung, ngay_tao),
+            (mon_hoc_id, tieu_de, noi_dung, _ngay_vao(ngay_tao)),
         )
         self.conn.commit()
         return self.cursor.lastrowid
@@ -405,9 +541,25 @@ class Database:
             SELECT ghi_chu.id, mon_hoc.ten_mon, ghi_chu.tieu_de, ghi_chu.noi_dung, ghi_chu.ngay_tao
             FROM ghi_chu
             LEFT JOIN mon_hoc ON ghi_chu.mon_hoc_id = mon_hoc.id
-            ORDER BY ghi_chu.ngay_tao DESC
+            ORDER BY ghi_chu.ngay_tao DESC, ghi_chu.id DESC
         """)
-        return self.cursor.fetchall()
+        return _doi_cot_ngay(self.cursor.fetchall(), 4)
+
+    def lay_ghi_chu(self, ghi_chu_id):
+        """Trả về (id, mon_hoc_id, tieu_de, noi_dung, ngay_tao) của một ghi chú."""
+        self.cursor.execute(
+            "SELECT id, mon_hoc_id, tieu_de, noi_dung, ngay_tao FROM ghi_chu WHERE id = ?",
+            (ghi_chu_id,),
+        )
+        row = self.cursor.fetchone()
+        return _doi_cot_ngay([row], 4)[0] if row else None
+
+    def sua_ghi_chu(self, ghi_chu_id, mon_hoc_id, tieu_de, noi_dung):
+        self.cursor.execute(
+            "UPDATE ghi_chu SET mon_hoc_id=?, tieu_de=?, noi_dung=? WHERE id=?",
+            (mon_hoc_id, tieu_de, noi_dung, ghi_chu_id),
+        )
+        self.conn.commit()
 
     def xoa_ghi_chu(self, ghi_chu_id):
         self.cursor.execute("DELETE FROM ghi_chu WHERE id = ?", (ghi_chu_id,))
