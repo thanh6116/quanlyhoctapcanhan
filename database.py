@@ -36,6 +36,34 @@ def _khoang_gio_tiet(tiet_bd, tiet_kt):
     return TIET_GIO[tiet_bd][0], TIET_GIO[tiet_kt][1]
 
 
+def khoang_lich_hoc(tiet_bd, tiet_kt, gio_bd=None, gio_kt=None):
+    """(phút bắt đầu, phút kết thúc) của một lịch học.
+
+    Lịch nhập theo giờ (gio_bd, gio_kt có giá trị) thì dùng đúng giờ đã nhập;
+    ngược lại đổi từ tiết qua bảng TIET_GIO. Không xác định được thì trả về None.
+    """
+    if gio_bd and gio_kt:
+        bd, kt = _gio_ra_phut(gio_bd), _gio_ra_phut(gio_kt)
+        return (bd, kt) if bd is not None and kt is not None else None
+    return _khoang_gio_tiet(tiet_bd, tiet_kt)
+
+
+def lich_hoc_trung(a, b):
+    """Hai lịch học (cùng thứ) có chồng giờ không? a, b = (tiet_bd, tiet_kt, gio_bd, gio_kt).
+
+    - Biết được giờ của cả hai: so sánh khoảng giờ nửa mở, học xong đúng lúc bắt đầu tiết
+      sau thì không trùng.
+    - Không biết giờ nhưng cả hai đều theo tiết: so sánh số tiết như cũ.
+    - Còn lại (không đủ thông tin): coi là có thể trùng.
+    """
+    ka, kb = khoang_lich_hoc(*a), khoang_lich_hoc(*b)
+    if ka is not None and kb is not None:
+        return ka[0] < kb[1] and kb[0] < ka[1]
+    if not (a[2] or a[3] or b[2] or b[3]):
+        return a[0] <= b[1] and b[0] <= a[1]
+    return True
+
+
 def _phut_ra_gio(phut):
     return f"{phut // 60}h{phut % 60:02d}"
 
@@ -48,9 +76,25 @@ def mo_ta_gio_tiet(tiet_bd, tiet_kt):
     return f"{_phut_ra_gio(khoang[0])}-{_phut_ra_gio(khoang[1])}"
 
 
-def _hoc_trung_gio_thi(phut_bat_dau_thi, tiet_bd, tiet_kt):
+def mo_ta_gio_lich_hoc(tiet_bd, tiet_kt, gio_bd=None, gio_kt=None):
+    """Giờ học dạng '7h00-9h50' cho cả lịch theo tiết lẫn lịch nhập giờ tay."""
+    khoang = khoang_lich_hoc(tiet_bd, tiet_kt, gio_bd, gio_kt)
+    if khoang is None:
+        return "chưa rõ giờ"
+    return f"{_phut_ra_gio(khoang[0])}-{_phut_ra_gio(khoang[1])}"
+
+
+def mo_ta_thoi_gian_hoc(tiet_bd, tiet_kt, gio_bd=None, gio_kt=None):
+    """'tiết 1-3, 7h00-9h50' (theo tiết) hoặc '7h30-9h15' (nhập giờ tay)."""
+    gio = mo_ta_gio_lich_hoc(tiet_bd, tiet_kt, gio_bd, gio_kt)
+    if gio_bd and gio_kt:
+        return gio
+    return f"tiết {tiet_bd}-{tiet_kt}, {gio}"
+
+
+def _hoc_trung_gio_thi(phut_bat_dau_thi, tiet_bd, tiet_kt, gio_bd=None, gio_kt=None):
     """Bài thi (giả định kéo dài SO_PHUT_THI_TOI_THIEU phút) có chồng lên giờ học không."""
-    khoang = _khoang_gio_tiet(tiet_bd, tiet_kt)
+    khoang = khoang_lich_hoc(tiet_bd, tiet_kt, gio_bd, gio_kt)
     if khoang is None:
         return True
     hoc_bd, hoc_kt = khoang
@@ -99,9 +143,26 @@ def _bo_dau(text):
     text = "".join(c for c in text if unicodedata.category(c) != "Mn")
     return text.replace("đ", "d").replace("Đ", "D").lower()
 
+# Ký tự đặc biệt vẫn được giữ lại khi so tên, vì chúng phân biệt môn học thật
+# (ví dụ "Lập trình C", "Lập trình C++", "Lập trình C#" là ba môn khác nhau).
+_KY_TU_GIU_LAI = "+#"
+
+
 def _chuan_hoa_ten(text):
-    """Chuẩn hóa tên để so sánh trùng: bỏ dấu, chữ thường, gộp khoảng trắng."""
-    return " ".join(_bo_dau(text).split())
+    """Chuẩn hóa tên để so sánh trùng: bỏ dấu, chữ thường, bỏ khoảng trắng và ký tự đặc biệt.
+
+    'OOP' = 'O o p'; 'HỆ điều HÀnh' = 'Hệ điều hành'; 'MẠng@máy tính' = 'mạng máy tính'.
+    Chỉ giữ lại chữ cái, chữ số và các ký tự trong _KY_TU_GIU_LAI.
+    """
+    return "".join(c for c in _bo_dau(text) if c.isalnum() or c in _KY_TU_GIU_LAI)
+
+
+chuan_hoa_ten_mon = _chuan_hoa_ten
+
+
+def ten_mon_hop_le(text):
+    """Tên môn phải có ít nhất một chữ cái hoặc chữ số (không chỉ toàn dấu cách, ký tự lạ)."""
+    return bool(_chuan_hoa_ten(text))
 
 
 _RE_ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -186,9 +247,14 @@ class Database:
                 tiet_bat_dau INTEGER NOT NULL,
                 tiet_ket_thuc INTEGER NOT NULL,
                 phong_hoc TEXT,
+                gio_bat_dau TEXT,
+                gio_ket_thuc TEXT,
                 FOREIGN KEY (mon_hoc_id) REFERENCES mon_hoc(id) ON DELETE CASCADE
             )
         """)
+        # CSDL tạo từ phiên bản cũ chưa có hai cột giờ: thêm vào (không mất dữ liệu)
+        self._them_cot_neu_thieu("lich_hoc", "gio_bat_dau", "TEXT")
+        self._them_cot_neu_thieu("lich_hoc", "gio_ket_thuc", "TEXT")
 
         #bảng lịch thi
         self.cursor.execute("""
@@ -230,6 +296,11 @@ class Database:
 
         self.conn.commit()
 
+    def _them_cot_neu_thieu(self, bang, cot, kieu):
+        self.cursor.execute(f"PRAGMA table_info({bang})")
+        if cot not in [c[1] for c in self.cursor.fetchall()]:
+            self.cursor.execute(f"ALTER TABLE {bang} ADD COLUMN {cot} {kieu}")
+
     def _id_nho_nhat_con_trong(self, ten_bang):
         """Tìm ID nhỏ nhất chưa được dùng trong bảng (1, 2, 3, ...)."""
         self.cursor.execute(f"SELECT id FROM {ten_bang} ORDER BY id")
@@ -263,10 +334,15 @@ class Database:
     def tim_kiem_mon_hoc(self, tu_khoa):
         """Tìm môn học theo tên (không phân biệt hoa thường và dấu)."""
         danh_sach = self.lay_danh_sach_mon_hoc()
-        tu_khoa = _bo_dau((tu_khoa or "").strip())
+        tu_khoa = (tu_khoa or "").strip()
         if not tu_khoa:
             return danh_sach
-        return [m for m in danh_sach if tu_khoa in _bo_dau(m[1])]
+        goc = _bo_dau(tu_khoa)
+        gon = _chuan_hoa_ten(tu_khoa)  # gõ "oop" vẫn tìm ra "O o p"
+        return [
+            m for m in danh_sach
+            if goc in _bo_dau(m[1]) or (gon and gon in _chuan_hoa_ten(m[1]))
+        ]
 
     def tim_mon_trung_ten(self, ten_mon, bo_qua_id=None):
         """Trả về môn học đã có cùng tên (không phân biệt hoa thường, dấu, khoảng trắng thừa)."""
@@ -288,25 +364,52 @@ class Database:
         self.conn.commit()
 
     # lịch học
-    def them_lich_hoc(self, mon_hoc_id, thu, tiet_bd, tiet_kt, phong_hoc):
+    @staticmethod
+    def _gia_tri_thoi_gian_hoc(tiet_bd, tiet_kt, gio_bd, gio_kt):
+        """Lịch nhập giờ tay: lưu tiết = 0 (cột tiết bắt buộc có giá trị) cùng hai giờ HH:MM."""
+        if gio_bd and gio_kt:
+            return 0, 0, chuan_hoa_gio(gio_bd), chuan_hoa_gio(gio_kt)
+        return tiet_bd, tiet_kt, None, None
+
+    def them_lich_hoc(self, mon_hoc_id, thu, tiet_bd, tiet_kt, phong_hoc,
+                      gio_bd=None, gio_kt=None):
+        """Thêm lịch học theo tiết (tiet_bd, tiet_kt) hoặc theo giờ nhập tay (gio_bd, gio_kt)."""
+        tiet_bd, tiet_kt, gio_bd, gio_kt = self._gia_tri_thoi_gian_hoc(
+            tiet_bd, tiet_kt, gio_bd, gio_kt
+        )
         self.cursor.execute(
-            "INSERT INTO lich_hoc (mon_hoc_id, thu, tiet_bat_dau, tiet_ket_thuc, phong_hoc) VALUES (?, ?, ?, ?, ?)",
-            (mon_hoc_id, thu, tiet_bd, tiet_kt, phong_hoc),
+            "INSERT INTO lich_hoc (mon_hoc_id, thu, tiet_bat_dau, tiet_ket_thuc, phong_hoc, "
+            "gio_bat_dau, gio_ket_thuc) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (mon_hoc_id, thu, tiet_bd, tiet_kt, phong_hoc, gio_bd, gio_kt),
         )
         self.conn.commit()
         return self.cursor.lastrowid
 
-    def tim_xung_dot_lich_hoc(self, thu, tiet_bd, tiet_kt, bo_qua_id=None):
-        """Các lịch học cùng thứ và có khoảng tiết giao nhau với (tiet_bd, tiet_kt)."""
-        self.cursor.execute("""
+    def tim_xung_dot_lich_hoc(self, thu, tiet_bd, tiet_kt, bo_qua_id=None,
+                              gio_bd=None, gio_kt=None):
+        """Các lịch học cùng thứ và chồng giờ với lịch (tiết hoặc giờ nhập tay) đưa vào."""
+        moi = (tiet_bd, tiet_kt, gio_bd, gio_kt)
+        return [
+            r for r in self._lich_hoc_cung_thu(thu)
+            if r[0] != bo_qua_id and lich_hoc_trung(moi, (r[3], r[4], r[6], r[7]))
+        ]
+
+    def _lich_hoc_cung_thu(self, thu, mon_hoc_id=None, loai_tru_mon=False):
+        """Các lịch học của một thứ, dạng (id, ten_mon, thu, tiet_bd, tiet_kt, phong, gio_bd, gio_kt)."""
+        sql = """
             SELECT lich_hoc.id, mon_hoc.ten_mon, lich_hoc.thu,
-                   lich_hoc.tiet_bat_dau, lich_hoc.tiet_ket_thuc, lich_hoc.phong_hoc
+                   lich_hoc.tiet_bat_dau, lich_hoc.tiet_ket_thuc, lich_hoc.phong_hoc,
+                   lich_hoc.gio_bat_dau, lich_hoc.gio_ket_thuc
             FROM lich_hoc
             JOIN mon_hoc ON lich_hoc.mon_hoc_id = mon_hoc.id
             WHERE lich_hoc.thu = ?
-              AND lich_hoc.tiet_bat_dau <= ? AND lich_hoc.tiet_ket_thuc >= ?
-        """, (thu, tiet_kt, tiet_bd))
-        return [r for r in self.cursor.fetchall() if r[0] != bo_qua_id]
+        """
+        tham_so = [thu]
+        if loai_tru_mon:
+            sql += " AND lich_hoc.mon_hoc_id IS NOT ?"
+            tham_so.append(mon_hoc_id)
+        self.cursor.execute(sql, tham_so)
+        return self.cursor.fetchall()
 
     def lay_id_lich_hoc_xung_dot(self):
         """Tập ID các lịch học đang trùng với một lịch học khác."""
@@ -314,39 +417,49 @@ class Database:
         ids = set()
         for i, a in enumerate(ds):
             for b in ds[i + 1:]:
-                if a[2] == b[2] and a[3] <= b[4] and b[3] <= a[4]:
+                if a[2] == b[2] and lich_hoc_trung(
+                    (a[3], a[4], a[6], a[7]), (b[3], b[4], b[6], b[7])
+                ):
                     ids.update((a[0], b[0]))
         return ids
 
     def lay_thoi_khoa_bieu(self):
+        """Trả về (id, ten_mon, thu, tiet_bd, tiet_kt, phong, gio_bd, gio_kt), xếp theo thứ rồi giờ học."""
         self.cursor.execute("""
             SELECT lich_hoc.id, mon_hoc.ten_mon, lich_hoc.thu,
-                   lich_hoc.tiet_bat_dau, lich_hoc.tiet_ket_thuc, lich_hoc.phong_hoc
+                   lich_hoc.tiet_bat_dau, lich_hoc.tiet_ket_thuc, lich_hoc.phong_hoc,
+                   lich_hoc.gio_bat_dau, lich_hoc.gio_ket_thuc
             FROM lich_hoc
             JOIN mon_hoc ON lich_hoc.mon_hoc_id = mon_hoc.id
-            ORDER BY
-                CASE lich_hoc.thu
-                    WHEN 'Thứ 2' THEN 2 WHEN 'Thứ 3' THEN 3 WHEN 'Thứ 4' THEN 4
-                    WHEN 'Thứ 5' THEN 5 WHEN 'Thứ 6' THEN 6 WHEN 'Thứ 7' THEN 7
-                    WHEN 'Chủ nhật' THEN 8 ELSE 9
-                END, lich_hoc.tiet_bat_dau
         """)
-        return self.cursor.fetchall()
+        rows = self.cursor.fetchall()
+
+        def khoa(r):
+            thu = TEN_THU.index(r[2]) if r[2] in TEN_THU else len(TEN_THU)
+            khoang = khoang_lich_hoc(r[3], r[4], r[6], r[7])
+            return (thu, khoang[0] if khoang else 24 * 60, r[0])
+
+        rows.sort(key=khoa)  # lịch nhập theo giờ và lịch theo tiết xếp chung đúng thứ tự giờ
+        return rows
 
     def lay_lich_hoc(self, lich_id):
-        """Trả về (id, mon_hoc_id, thu, tiet_bd, tiet_kt, phong_hoc) của một lịch học."""
+        """Trả về (id, mon_hoc_id, thu, tiet_bd, tiet_kt, phong_hoc, gio_bd, gio_kt) của một lịch học."""
         self.cursor.execute(
-            "SELECT id, mon_hoc_id, thu, tiet_bat_dau, tiet_ket_thuc, phong_hoc "
-            "FROM lich_hoc WHERE id = ?",
+            "SELECT id, mon_hoc_id, thu, tiet_bat_dau, tiet_ket_thuc, phong_hoc, "
+            "gio_bat_dau, gio_ket_thuc FROM lich_hoc WHERE id = ?",
             (lich_id,),
         )
         return self.cursor.fetchone()
 
-    def sua_lich_hoc(self, lich_id, mon_hoc_id, thu, tiet_bd, tiet_kt, phong_hoc):
+    def sua_lich_hoc(self, lich_id, mon_hoc_id, thu, tiet_bd, tiet_kt, phong_hoc,
+                     gio_bd=None, gio_kt=None):
+        tiet_bd, tiet_kt, gio_bd, gio_kt = self._gia_tri_thoi_gian_hoc(
+            tiet_bd, tiet_kt, gio_bd, gio_kt
+        )
         self.cursor.execute(
-            "UPDATE lich_hoc SET mon_hoc_id=?, thu=?, tiet_bat_dau=?, tiet_ket_thuc=?, phong_hoc=? "
-            "WHERE id=?",
-            (mon_hoc_id, thu, tiet_bd, tiet_kt, phong_hoc, lich_id),
+            "UPDATE lich_hoc SET mon_hoc_id=?, thu=?, tiet_bat_dau=?, tiet_ket_thuc=?, "
+            "phong_hoc=?, gio_bat_dau=?, gio_ket_thuc=? WHERE id=?",
+            (mon_hoc_id, thu, tiet_bd, tiet_kt, phong_hoc, gio_bd, gio_kt, lich_id),
         )
         self.conn.commit()
 
@@ -398,14 +511,7 @@ class Database:
         thu = _thu_cua_ngay(ngay_thi)
         if thu is None:
             return []
-        self.cursor.execute("""
-            SELECT lich_hoc.id, mon_hoc.ten_mon, lich_hoc.thu,
-                   lich_hoc.tiet_bat_dau, lich_hoc.tiet_ket_thuc, lich_hoc.phong_hoc
-            FROM lich_hoc
-            JOIN mon_hoc ON lich_hoc.mon_hoc_id = mon_hoc.id
-            WHERE lich_hoc.thu = ? AND lich_hoc.mon_hoc_id IS NOT ?
-        """, (thu, mon_hoc_id))
-        return self.cursor.fetchall()
+        return self._lich_hoc_cung_thu(thu, mon_hoc_id, loai_tru_mon=True)
 
     def tim_lich_hoc_trung_gio_thi(self, ngay_thi, gio_thi, mon_hoc_id=None):
         """Lịch học (môn khác) ảnh hưởng tới lịch thi.
@@ -418,7 +524,9 @@ class Database:
         bat_dau = _gio_ra_phut(gio_thi)
         if bat_dau is None:
             return cung_ngay, False
-        return [r for r in cung_ngay if _hoc_trung_gio_thi(bat_dau, r[3], r[4])], True
+        return [
+            r for r in cung_ngay if _hoc_trung_gio_thi(bat_dau, r[3], r[4], r[6], r[7])
+        ], True
 
     def lay_id_lich_thi_xung_dot(self):
         """Trả về (ID tô đỏ, ID tô cam).
@@ -431,7 +539,8 @@ class Database:
         )
         thi = _doi_cot_ngay(self.cursor.fetchall(), 2)
         self.cursor.execute(
-            "SELECT mon_hoc_id, thu, tiet_bat_dau, tiet_ket_thuc FROM lich_hoc"
+            "SELECT mon_hoc_id, thu, tiet_bat_dau, tiet_ket_thuc, gio_bat_dau, gio_ket_thuc "
+            "FROM lich_hoc"
         )
         hoc = self.cursor.fetchall()
 
@@ -448,7 +557,7 @@ class Database:
             bat_dau = _gio_ra_phut(a[3])
             if bat_dau is None:
                 cam.add(a[0])
-            elif any(_hoc_trung_gio_thi(bat_dau, h[2], h[3]) for h in cung_ngay):
+            elif any(_hoc_trung_gio_thi(bat_dau, h[2], h[3], h[4], h[5]) for h in cung_ngay):
                 do.add(a[0])
         return do, cam
 
