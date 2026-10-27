@@ -19,7 +19,10 @@ try:
 except ImportError:  # chưa cài tkcalendar (pip install tkcalendar) -> dùng ô nhập tay
     DateEntry = None
 
-from database import DB_NAME, Database, mo_ta_gio_tiet, chuan_hoa_gio
+from database import (
+    DB_NAME, Database, chuan_hoa_gio, chuan_hoa_ten_mon,
+    mo_ta_gio_lich_hoc, mo_ta_thoi_gian_hoc, ten_mon_hop_le,
+)
 
 DAYS = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ nhật"]
 PRIORITIES = ["Thấp", "Trung bình", "Cao", "Khẩn cấp"]
@@ -27,6 +30,7 @@ STATUSES = ["Chưa hoàn thành", "Đang làm", "Hoàn thành"]
 HINH_THUC_THI = ["Tự luận", "Trắc nghiệm", "Vấn đáp", "Thực hành", "Tiểu luận"]
 GIO_MAC_DINH = "07:00"
 NGAY_FMT = "%d/%m/%Y"
+
 
 # ---------------------------------------------------------------------------
 # Ô chọn ngày / giờ
@@ -93,6 +97,55 @@ class GioEntry(ttk.Frame):
         if not (0 <= h <= 23 and 0 <= m <= 59):
             return None
         return f"{h:02d}:{m:02d}"
+
+
+class ChonThoiGianHoc(ttk.Frame):
+    """Chọn thời gian của một buổi học: theo tiết (1-12) hoặc nhập giờ bắt đầu, kết thúc bằng tay."""
+
+    def __init__(self, parent, tiet_bd=1, tiet_kt=2, gio_bd=None, gio_kt=None):
+        super().__init__(parent)
+        self.che_do = tk.StringVar(value="gio" if (gio_bd and gio_kt) else "tiet")
+
+        thanh = ttk.Frame(self)
+        thanh.grid(row=0, column=0, sticky="w", pady=(0, 4))
+        ttk.Label(thanh, text="Nhập theo:").pack(side="left", padx=(5, 8))
+        ttk.Radiobutton(thanh, text="Tiết", value="tiet", variable=self.che_do,
+                        command=self._doi_che_do).pack(side="left")
+        ttk.Radiobutton(thanh, text="Giờ (nhập tay)", value="gio", variable=self.che_do,
+                        command=self._doi_che_do).pack(side="left", padx=10)
+
+        self.khung_tiet = ttk.Frame(self)
+        ttk.Label(self.khung_tiet, text="Tiết bắt đầu:").grid(row=0, column=0, sticky="w", padx=5)
+        self.tiet_bd = ttk.Spinbox(self.khung_tiet, from_=1, to=12, width=6)
+        self.tiet_bd.grid(row=0, column=1, padx=(0, 20))
+        ttk.Label(self.khung_tiet, text="Tiết kết thúc:").grid(row=0, column=2, sticky="w", padx=5)
+        self.tiet_kt = ttk.Spinbox(self.khung_tiet, from_=1, to=12, width=6)
+        self.tiet_kt.grid(row=0, column=3)
+
+        self.khung_gio = ttk.Frame(self)
+        ttk.Label(self.khung_gio, text="Giờ bắt đầu:").grid(row=0, column=0, sticky="w", padx=5)
+        self.gio_bd = GioEntry(self.khung_gio, gio=gio_bd or "07:00")
+        self.gio_bd.grid(row=0, column=1, padx=(0, 20))
+        ttk.Label(self.khung_gio, text="Giờ kết thúc:").grid(row=0, column=2, sticky="w", padx=5)
+        self.gio_kt = GioEntry(self.khung_gio, gio=gio_kt or "09:00")
+        self.gio_kt.grid(row=0, column=3)
+        ttk.Label(
+            self.khung_gio, foreground="#595959",
+            text="Giờ theo 24h, ví dụ 07:30 đến 09:15. Dùng khi lịch học không theo tiết.",
+        ).grid(row=1, column=0, columnspan=4, sticky="w", padx=5, pady=(2, 0))
+
+        tiet_hop_le = lambda t: t if isinstance(t, int) and 1 <= t <= 12 else None
+        self.tiet_bd.set(str(tiet_hop_le(tiet_bd) or 1))
+        self.tiet_kt.set(str(tiet_hop_le(tiet_kt) or 2))
+        self._doi_che_do()
+
+    def _doi_che_do(self):
+        if self.che_do.get() == "gio":
+            self.khung_tiet.grid_remove()
+            self.khung_gio.grid(row=1, column=0, sticky="w")
+        else:
+            self.khung_gio.grid_remove()
+            self.khung_tiet.grid(row=1, column=0, sticky="w")
 
 
 # ---------------------------------------------------------------------------
@@ -374,11 +427,19 @@ class QLHTApp(tk.Tk):
         if not ten:
             messagebox.showwarning("Thiếu dữ liệu", "Vui lòng nhập tên môn học.")
             return
+        if not ten_mon_hop_le(ten):
+            messagebox.showwarning(
+                "Tên môn không hợp lệ",
+                "Tên môn phải có ít nhất một chữ cái hoặc chữ số.",
+            )
+            return
         trung = self.db.tim_mon_trung_ten(ten)
         if trung:
             messagebox.showwarning(
                 "Trùng tên môn",
-                f"Môn học '{trung[1]}' đã tồn tại (ID {trung[0]}).\n"
+                f"Tên '{ten}' bị coi là TRÙNG với môn '{trung[1]}' (ID {trung[0]}).\n"
+                "Khi so tên, chương trình bỏ qua chữ hoa/thường, dấu, khoảng trắng "
+                "và ký tự đặc biệt.\n"
                 "Vui lòng dùng tên khác hoặc sửa môn đã có.",
             )
             return
@@ -477,14 +538,26 @@ class QLHTApp(tk.Tk):
                     "Thiếu dữ liệu", "Vui lòng nhập tên môn học.", parent=win
                 )
                 return
-            trung = self.db.tim_mon_trung_ten(ten_moi, bo_qua_id=mon_id)
-            if trung:
+            if not ten_mon_hop_le(ten_moi):
                 messagebox.showwarning(
-                    "Trùng tên môn",
-                    f"Môn học '{trung[1]}' đã tồn tại (ID {trung[0]}).",
+                    "Tên môn không hợp lệ",
+                    "Tên môn phải có ít nhất một chữ cái hoặc chữ số.",
                     parent=win,
                 )
                 return
+            # Giữ nguyên tên (chỉ đổi tín chỉ, giảng viên...) thì không cần kiểm tra trùng,
+            # để vẫn sửa được những môn trùng tên đã có từ trước.
+            if chuan_hoa_ten_mon(ten_moi) != chuan_hoa_ten_mon(ten):
+                trung = self.db.tim_mon_trung_ten(ten_moi, bo_qua_id=mon_id)
+                if trung:
+                    messagebox.showwarning(
+                        "Trùng tên môn",
+                        f"Tên '{ten_moi}' bị coi là TRÙNG với môn '{trung[1]}' "
+                        f"(ID {trung[0]}).\nKhi so tên, chương trình bỏ qua chữ hoa/thường, "
+                        "dấu, khoảng trắng và ký tự đặc biệt.",
+                        parent=win,
+                    )
+                    return
             try:
                 tinchi_moi = int(e_tc.get())
             except ValueError:
@@ -526,13 +599,8 @@ class QLHTApp(tk.Tk):
         self.tkb_thu = ttk.Combobox(form, values=DAYS, width=12, state="readonly")
         self.tkb_thu.grid(row=0, column=3, padx=5, pady=5)
 
-        ttk.Label(form, text="Tiết bắt đầu:").grid(row=1, column=0, sticky="w", padx=5, pady=5)
-        self.tkb_bd = ttk.Spinbox(form, from_=1, to=12, width=10)
-        self.tkb_bd.grid(row=1, column=1, sticky="w", padx=5, pady=5)
-
-        ttk.Label(form, text="Tiết kết thúc:").grid(row=1, column=2, sticky="w", padx=5, pady=5)
-        self.tkb_kt = ttk.Spinbox(form, from_=1, to=12, width=10)
-        self.tkb_kt.grid(row=1, column=3, sticky="w", padx=5, pady=5)
+        self.tkb_tg = ChonThoiGianHoc(form)
+        self.tkb_tg.grid(row=1, column=0, columnspan=4, sticky="w", pady=5)
 
         ttk.Label(form, text="Phòng học:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
         self.tkb_phong = ttk.Entry(form, width=30)
@@ -545,10 +613,10 @@ class QLHTApp(tk.Tk):
         list_frame = ttk.LabelFrame(frame, text="Thời khóa biểu trong tuần (dòng đỏ: trùng lịch học)", padding=10)
         list_frame.pack(fill="both", expand=True, padx=15, pady=10)
 
-        cols = ("id", "mon", "thu", "bd", "kt", "phong")
+        cols = ("id", "mon", "thu", "bd", "kt", "gio", "phong")
         self.tree_tkb = ttk.Treeview(list_frame, columns=cols, show="headings")
-        headers = ["ID", "Môn học", "Thứ", "Tiết BĐ", "Tiết KT", "Phòng"]
-        widths = [40, 220, 90, 70, 70, 150]
+        headers = ["ID", "Môn học", "Thứ", "Tiết BĐ", "Tiết KT", "Giờ học", "Phòng"]
+        widths = [40, 200, 80, 65, 65, 110, 130]
         for c, h, w in zip(cols, headers, widths):
             self.tree_tkb.heading(c, text=h)
             self.tree_tkb.column(c, width=w, anchor="w")
@@ -572,13 +640,34 @@ class QLHTApp(tk.Tk):
             if self.tree_tkb.identify_region(e.x, e.y) == "cell" else None,
         )
 
-    def _doc_lich_hoc(self, mon, thu, bd_text, kt_text, parent):
-        """Kiểm tra dữ liệu lịch học. Hợp lệ -> (mon_id, bd, kt); sai -> báo lỗi và trả về None."""
+    def _doc_lich_hoc(self, mon, thu, tg, parent):
+        """Kiểm tra dữ liệu lịch học. `tg` là ChonThoiGianHoc.
+
+        Hợp lệ -> (mon_id, tiet_bd, tiet_kt, gio_bd, gio_kt): theo tiết thì gio_* là None,
+        theo giờ nhập tay thì tiet_* là None. Sai -> báo lỗi và trả về None."""
         if not mon or not thu:
             messagebox.showwarning("Thiếu dữ liệu", "Vui lòng chọn môn học và thứ.", parent=parent)
             return None
+        mon_id = self._tach_mon_id(mon)
+
+        if tg.che_do.get() == "gio":
+            gio_bd, gio_kt = tg.gio_bd.lay(), tg.gio_kt.lay()
+            if gio_bd is None or gio_kt is None:
+                messagebox.showwarning(
+                    "Sai giờ học",
+                    "Giờ học không hợp lệ.\nHãy nhập giờ từ 00 đến 23 và phút từ 00 đến 59.",
+                    parent=parent,
+                )
+                return None
+            if gio_kt <= gio_bd:  # 'HH:MM' có đệm số 0 nên so sánh chuỗi cũng là so sánh giờ
+                messagebox.showwarning(
+                    "Lỗi", "Giờ kết thúc phải sau giờ bắt đầu.", parent=parent
+                )
+                return None
+            return mon_id, None, None, gio_bd, gio_kt
+
         try:
-            bd, kt = int(bd_text), int(kt_text)
+            bd, kt = int(tg.tiet_bd.get()), int(tg.tiet_kt.get())
         except ValueError:
             messagebox.showwarning("Lỗi", "Tiết học phải là số.", parent=parent)
             return None
@@ -588,17 +677,18 @@ class QLHTApp(tk.Tk):
         if kt < bd:
             messagebox.showwarning("Lỗi", "Tiết kết thúc phải >= tiết bắt đầu.", parent=parent)
             return None
-        return self._tach_mon_id(mon), bd, kt
+        return mon_id, bd, kt, None, None
 
-    def _xac_nhan_lich_hoc(self, thu, bd, kt, parent, bo_qua_id=None):
+    def _xac_nhan_lich_hoc(self, thu, bd, kt, gio_bd, gio_kt, parent, bo_qua_id=None):
         """Cảnh báo nếu trùng lịch học khác. Trả về True nếu người dùng vẫn muốn tiếp tục."""
-        trung = self.db.tim_xung_dot_lich_hoc(thu, bd, kt, bo_qua_id)
+        trung = self.db.tim_xung_dot_lich_hoc(thu, bd, kt, bo_qua_id, gio_bd, gio_kt)
         if not trung:
             return True
         ds = "\n".join(self._mo_ta_lich_hoc(r) for r in trung)
+        mo_ta = mo_ta_thoi_gian_hoc(bd, kt, gio_bd, gio_kt)
         return messagebox.askyesno(
             "⚠ Cảnh báo trùng lịch học",
-            f"Lịch học ({thu}, tiết {bd}-{kt}) bị TRÙNG với:\n{ds}\n\nBạn vẫn muốn lưu?",
+            f"Lịch học ({thu}, {mo_ta}) bị TRÙNG với:\n{ds}\n\nBạn vẫn muốn lưu?",
             icon="warning",
             parent=parent,
         )
@@ -606,16 +696,16 @@ class QLHTApp(tk.Tk):
     @bat_loi_db
     def them_lich_hoc(self):
         thu = self.tkb_thu.get()
-        du_lieu = self._doc_lich_hoc(
-            self.tkb_mon.get(), thu, self.tkb_bd.get(), self.tkb_kt.get(), self
-        )
+        du_lieu = self._doc_lich_hoc(self.tkb_mon.get(), thu, self.tkb_tg, self)
         if du_lieu is None:
             return
-        mon_id, bd, kt = du_lieu
-        if not self._xac_nhan_lich_hoc(thu, bd, kt, self):
+        mon_id, bd, kt, gio_bd, gio_kt = du_lieu
+        if not self._xac_nhan_lich_hoc(thu, bd, kt, gio_bd, gio_kt, self):
             return
 
-        self.db.them_lich_hoc(mon_id, thu, bd, kt, self.tkb_phong.get().strip())
+        self.db.them_lich_hoc(
+            mon_id, thu, bd, kt, self.tkb_phong.get().strip(), gio_bd, gio_kt
+        )
         self.tkb_phong.delete(0, tk.END)
         self.refresh_tkb()
         self.refresh_lichthi()
@@ -634,7 +724,7 @@ class QLHTApp(tk.Tk):
             self.refresh_tkb()
             self.refresh_lichthi()
             return
-        _, mon_id, thu, bd, kt, phong = lh
+        _, mon_id, thu, bd, kt, phong, gio_bd, gio_kt = lh
         names, mon_hien_tai = self._danh_sach_ten_mon(mon_id)
 
         win, form = self._tao_cua_so("Sửa lịch học")
@@ -649,39 +739,35 @@ class QLHTApp(tk.Tk):
         e_thu.set(thu)
         e_thu.grid(row=1, column=1, sticky="w", padx=5, pady=5)
 
-        ttk.Label(form, text="Tiết bắt đầu:").grid(row=2, column=0, sticky="w", padx=5, pady=5)
-        e_bd = ttk.Spinbox(form, from_=1, to=12, width=10)
-        e_bd.set(str(bd))
-        e_bd.grid(row=2, column=1, sticky="w", padx=5, pady=5)
+        e_tg = ChonThoiGianHoc(form, bd, kt, gio_bd, gio_kt)
+        e_tg.grid(row=2, column=0, columnspan=2, sticky="w", pady=5)
 
-        ttk.Label(form, text="Tiết kết thúc:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
-        e_kt = ttk.Spinbox(form, from_=1, to=12, width=10)
-        e_kt.set(str(kt))
-        e_kt.grid(row=3, column=1, sticky="w", padx=5, pady=5)
-
-        ttk.Label(form, text="Phòng học:").grid(row=4, column=0, sticky="w", padx=5, pady=5)
+        ttk.Label(form, text="Phòng học:").grid(row=3, column=0, sticky="w", padx=5, pady=5)
         e_phong = ttk.Entry(form, width=32)
         e_phong.insert(0, phong or "")
-        e_phong.grid(row=4, column=1, padx=5, pady=5)
+        e_phong.grid(row=3, column=1, padx=5, pady=5)
 
         @self._an_toan
         def luu():
             thu_moi = e_thu.get()
-            du_lieu = self._doc_lich_hoc(e_mon.get(), thu_moi, e_bd.get(), e_kt.get(), win)
+            du_lieu = self._doc_lich_hoc(e_mon.get(), thu_moi, e_tg, win)
             if du_lieu is None:
                 return
-            mon_moi, bd_moi, kt_moi = du_lieu
-            if not self._xac_nhan_lich_hoc(thu_moi, bd_moi, kt_moi, win, bo_qua_id=lich_id):
+            mon_moi, bd_moi, kt_moi, gio_bd_moi, gio_kt_moi = du_lieu
+            if not self._xac_nhan_lich_hoc(
+                thu_moi, bd_moi, kt_moi, gio_bd_moi, gio_kt_moi, win, bo_qua_id=lich_id
+            ):
                 return
             self.db.sua_lich_hoc(
-                lich_id, mon_moi, thu_moi, bd_moi, kt_moi, e_phong.get().strip()
+                lich_id, mon_moi, thu_moi, bd_moi, kt_moi, e_phong.get().strip(),
+                gio_bd_moi, gio_kt_moi,
             )
             win.destroy()
             self.refresh_tkb()
             self.refresh_lichthi()
             messagebox.showinfo("Thành công", "Đã cập nhật lịch học.")
 
-        self._them_nut_luu_huy(form, 5, luu, win)
+        self._them_nut_luu_huy(form, 4, luu, win)
         win.bind("<Return>", lambda e: luu())
 
     @bat_loi_db
@@ -693,7 +779,7 @@ class QLHTApp(tk.Tk):
         item = self.tree_tkb.item(selected[0])
         v = item["values"]
         if not messagebox.askyesno(
-            "Xác nhận", f"Xóa lịch học '{v[1]}' ({v[2]}, tiết {v[3]}-{v[4]})?"
+            "Xác nhận", f"Xóa lịch học '{v[1]}' ({v[2]}, {v[5]})?"
         ):
             return
         self.db.xoa_lich_hoc(v[0])
@@ -708,12 +794,17 @@ class QLHTApp(tk.Tk):
         xung_dot = self.db.lay_id_lich_hoc_xung_dot()
         for lh in self.db.lay_thoi_khoa_bieu():
             tags = ("conflict",) if lh[0] in xung_dot else ()
-            self.tree_tkb.insert("", "end", values=lh, tags=tags)
+            theo_gio = bool(lh[6] and lh[7])  # lịch nhập giờ tay thì không có số tiết
+            bd, kt = ("—", "—") if theo_gio else (lh[3], lh[4])
+            gio = mo_ta_gio_lich_hoc(lh[3], lh[4], lh[6], lh[7])
+            self.tree_tkb.insert(
+                "", "end", values=(lh[0], lh[1], lh[2], bd, kt, gio, lh[5]), tags=tags
+            )
 
     @staticmethod
     def _mo_ta_lich_hoc(r):
-        gio = mo_ta_gio_tiet(r[3], r[4])
-        return f"  • {r[1]} ({r[2]}, tiết {r[3]}-{r[4]}, {gio}, phòng {r[5] or '—'})"
+        tg = mo_ta_thoi_gian_hoc(r[3], r[4], r[6], r[7])
+        return f"  • {r[1]} ({r[2]}, {tg}, phòng {r[5] or '—'})"
 
     @staticmethod
     def _mo_ta_lich_thi(r):
